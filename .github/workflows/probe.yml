@@ -1,0 +1,70 @@
+# Each job asks one question about Dagger on GitHub-hosted runners and answers it with a
+# PASS, FAIL or BASELINE line in the run summary. Re-run the workflow to measure caching
+# across runs: the first run only seeds it.
+name: probe
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: ${{ matrix.probe }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        probe: [engine-boot, cache-in-job, cache-volume, secrets, services]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - run: ci/${{ matrix.probe }}.sh
+
+  # The engine Dagger provisions by itself, with no cache setup at all.
+  cache-across-runs-default:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - run: ci/cache-across-runs.sh default
+
+  # Our own engine container, with its state directory archived into actions/cache.
+  cache-across-runs-persisted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - id: restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dagger-state.tar.zst
+          # Keyed per attempt so every run saves fresh state; the prefix restores the newest.
+          key: dagger-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dagger-state-
+      - run: ci/persisted-engine.sh start
+      - run: ci/cache-across-runs.sh persisted ${{ steps.restore.outputs.cache-matched-key != '' }}
+      - if: always()
+        run: ci/persisted-engine.sh stop
+      - if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dagger-state.tar.zst
+          key: dagger-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # Windows runners have Docker in Windows-container mode only; does Dagger cope?
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - run: ci/engine-boot.sh
