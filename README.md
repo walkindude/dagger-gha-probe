@@ -13,6 +13,7 @@ summary that says what it measured.
 | `services` | Can a pipeline reach a Dagger service container by hostname? |
 | `cache-across-runs-default` | Does the cache survive into the next workflow run with no setup? |
 | `cache-across-runs-persisted` | Does it survive if we archive the engine's state with `actions/cache`? |
+| `cache-across-runs-gha-export` | Does it survive through BuildKit's `type=gha` cache export? |
 | `windows` | Does Dagger work on `windows-latest` at all? |
 
 The cross-run jobs need two runs: the first seeds the cache, the re-run measures it.

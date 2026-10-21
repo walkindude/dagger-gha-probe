@@ -15,7 +15,7 @@ start)
   sudo mkdir -p "$STATE_DIR"
   if [[ -f "$ARCHIVE" ]]; then
     t=$(now); sudo tar --zstd -xf "$ARCHIVE" -C "$STATE_DIR"
-    summary "Restored engine state ($(du -h "$ARCHIVE" | cut -f1) compressed) in $(( $(now) - t ))s."
+    note "Restored engine state ($(du -h "$ARCHIVE" | cut -f1) compressed) in $(( $(now) - t ))s."
   fi
   docker run -d --name "$ENGINE" --privileged -v "$STATE_DIR:/var/lib/dagger" \
     "registry.dagger.io/engine:$EXPECTED_DAGGER_VERSION" > /dev/null
@@ -27,7 +27,7 @@ stop)
   t=$(now)
   sudo tar --zstd -cf "$ARCHIVE" -C "$STATE_DIR" .
   sudo chown "$(id -u):$(id -g)" "$ARCHIVE"
-  summary "Archived engine state: $(du -h "$ARCHIVE" | cut -f1) compressed in $(( $(now) - t ))s."
+  note "Archived engine state: $(du -h "$ARCHIVE" | cut -f1) compressed in $(( $(now) - t ))s."
   ;;
 *)
   fail "persisted-engine.sh" "Unknown command '$1'. Valid commands: start, stop."

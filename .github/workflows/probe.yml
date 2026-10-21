@@ -57,10 +57,36 @@ jobs:
           path: ${{ runner.temp }}/dagger-state.tar.zst
           key: dagger-state-${{ github.run_id }}-${{ github.run_attempt }}
 
+  # BuildKit's GitHub Actions cache backend, through Dagger's undocumented cache config.
+  # Every run seeds the cache, so from the second run on a miss means it does not work.
+  cache-across-runs-gha-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      # The cache service credentials are only given to JavaScript actions, so hand them on.
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const token = process.env.ACTIONS_RUNTIME_TOKEN;
+            core.setSecret(token);
+            const attrs = [
+              'type=gha', 'mode=max', 'scope=dagger-probe',
+              `url=${process.env.ACTIONS_CACHE_URL ?? ''}`,
+              `url_v2=${process.env.ACTIONS_RESULTS_URL ?? ''}`,
+              `token=${token}`,
+            ];
+            core.exportVariable('_EXPERIMENTAL_DAGGER_CACHE_CONFIG', attrs.join(','));
+      - run: ci/cache-across-runs.sh gha-export
+
   # Windows runners have Docker in Windows-container mode only; does Dagger cope?
   windows:
     runs-on: windows-latest
     timeout-minutes: 10
+    env:
+      # Short, because the job has already been seen to hang rather than fail.
+      DAGGER_CALL_TIMEOUT_SECONDS: 60
     defaults:
       run:
         shell: bash

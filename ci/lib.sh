@@ -20,6 +20,9 @@ on_unexpected_error() {
 }
 trap 'on_unexpected_error $LINENO "$BASH_COMMAND"' ERR
 EXPECTED_DAGGER_VERSION="v$(sed -n 's/^dagger = "\(.*\)"/\1/p' mise.toml)"
+# Upper bound on any single dagger call. A cold engine start takes ~20s on ubuntu-latest;
+# the limit exists so a hung CLI ends in a FAIL that says so, instead of a cancelled job.
+DAGGER_CALL_TIMEOUT_SECONDS=${DAGGER_CALL_TIMEOUT_SECONDS:-300}
 LOG_DIR="${RUNNER_TEMP:-/tmp}/probe-logs"
 mkdir -p "$LOG_DIR"
 
@@ -28,6 +31,12 @@ summary() { printf '%s\n' "$@" >> "$GITHUB_STEP_SUMMARY"; }
 pass() {
   summary "### ✅ PASS: $1" "" "$2" ""
   echo "PASS: $1: $2"
+}
+
+# A measurement worth keeping that is not itself a verdict, such as a size or a duration.
+note() {
+  summary "$1" ""
+  echo "NOTE: $1"
 }
 
 # Neither pass nor fail: the run could not answer the question yet, and says why.
@@ -46,8 +55,11 @@ fail() {
 # tail of Dagger's own log in the summary, so the reason is visible without opening logs.
 dag() {
   local name=$1 pipeline=$2
-  local log="$LOG_DIR/$name.log"
-  if ! dagger --progress=plain -c "$pipeline" 2> "$log"; then
+  local log="$LOG_DIR/$name.log" code=0
+  timeout "$DAGGER_CALL_TIMEOUT_SECONDS" dagger --progress=plain -c "$pipeline" 2> "$log" < /dev/null || code=$?
+  if (( code == 124 )); then
+    fail "dagger pipeline '$name' hung" "No result after ${DAGGER_CALL_TIMEOUT_SECONDS}s (DAGGER_CALL_TIMEOUT_SECONDS). Last log line: $(tail -n 1 "$log")"
+  elif (( code != 0 )); then
     summary "### ❌ FAIL: dagger pipeline '$name' errored" "" '```' "$(tail -n 25 "$log")" '```'
     echo "::error title=dagger pipeline '$name' errored::see the step summary for Dagger's log tail"
     exit "$REPORTED"
@@ -56,9 +68,12 @@ dag() {
 
 # Every job first proves it is testing the Dagger it claims to, with the nag silenced.
 preflight() {
-  local version_output actual
-  version_output=$(dagger version 2>&1) ||
-    fail "dagger version" "'dagger version' itself failed: $version_output"
+  local version_output actual code=0
+  version_output=$(timeout "$DAGGER_CALL_TIMEOUT_SECONDS" dagger version 2>&1 < /dev/null) || code=$?
+  (( code == 124 )) &&
+    fail "dagger version" "'dagger version' hung for ${DAGGER_CALL_TIMEOUT_SECONDS}s. It needs no engine, so the CLI itself is stuck on this runner."
+  (( code == 0 )) ||
+    fail "dagger version" "'dagger version' itself failed (exit $code): $version_output"
   actual=$(awk '{print $2}' <<< "$version_output")
   [[ "$actual" == "$EXPECTED_DAGGER_VERSION" ]] ||
     fail "dagger version" "Expected $EXPECTED_DAGGER_VERSION (pinned in mise.toml), got '$actual'. Is mise on PATH?"
