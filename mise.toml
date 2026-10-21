@@ -1,0 +1,7 @@
+[tools]
+# Single source of truth for the Dagger version: CI installs it through mise too.
+dagger = "0.21.10"
+
+[env]
+DAGGER_NO_NAG = "1"
+DAGGER_NO_UPDATE_CHECK = "1"
