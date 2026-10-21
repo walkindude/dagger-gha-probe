@@ -15,7 +15,7 @@ on_unexpected_error() {
   local code=$? line=$1 cmd=$2
   (( code == REPORTED )) && exit "$REPORTED"
   summary "### ❌ FAIL: unexpected error" "" "\`$cmd\` exited $code at ${BASH_SOURCE[1]}:$line." ""
-  echo "::error title=unexpected error::'$cmd' exited $code at ${BASH_SOURCE[1]}:$line"
+  report "::error title=unexpected error::'$cmd' exited $code at ${BASH_SOURCE[1]}:$line"
   exit "$REPORTED"
 }
 trap 'on_unexpected_error $LINENO "$BASH_COMMAND"' ERR
@@ -28,31 +28,35 @@ mkdir -p "$LOG_DIR"
 
 summary() { printf '%s\n' "$@" >> "$GITHUB_STEP_SUMMARY"; }
 
+# Reports go to stderr: helpers often run inside $(...), which would capture stdout and
+# hide the report from the job log. The runner reads workflow commands on stderr too.
+report() { printf '%s\n' "$@" >&2; }
+
 pass() {
   summary "### ✅ PASS: $1" "" "$2" ""
-  echo "PASS: $1: $2"
+  report "PASS: $1: $2"
 }
 
 # A measurement worth keeping that is not itself a verdict, such as a size or a duration.
 note() {
   summary "$1" ""
-  echo "NOTE: $1"
+  report "NOTE: $1"
 }
 
 # Neither pass nor fail: the run could not answer the question yet, and says why.
 baseline() {
   summary "### ⚪ BASELINE: $1" "" "$2" ""
-  echo "BASELINE: $1: $2"
+  report "BASELINE: $1: $2"
 }
 
 fail() {
   summary "### ❌ FAIL: $1" "" "$2" ""
-  echo "::error title=$1::$2"
+  report "::error title=$1::$2"
   exit "$REPORTED"
 }
 
 # Runs a Dagger shell pipeline and prints its stdout. On failure, the job fails with the
-# tail of Dagger's own log in the summary, so the reason is visible without opening logs.
+# tail of Dagger's own log in the summary and the job log.
 dag() {
   local name=$1 pipeline=$2
   local log="$LOG_DIR/$name.log" code=0
@@ -61,7 +65,8 @@ dag() {
     fail "dagger pipeline '$name' hung" "No result after ${DAGGER_CALL_TIMEOUT_SECONDS}s (DAGGER_CALL_TIMEOUT_SECONDS). Last log line: $(tail -n 1 "$log")"
   elif (( code != 0 )); then
     summary "### ❌ FAIL: dagger pipeline '$name' errored" "" '```' "$(tail -n 25 "$log")" '```'
-    echo "::error title=dagger pipeline '$name' errored::see the step summary for Dagger's log tail"
+    report "::group::Dagger log tail for '$name'" "$(tail -n 25 "$log")" "::endgroup::"
+    report "::error title=dagger pipeline '$name' errored (exit $code)::$(grep -v '^\s*$' "$log" | tail -n 1)"
     exit "$REPORTED"
   fi
 }
