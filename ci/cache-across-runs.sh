@@ -21,7 +21,7 @@ detail="state restored: $restored. Cache volume has seen ${runs_seen// /} run(s)
 if (( executed_at < job_start )); then
   pass "cache across runs ($label)" "HIT: result executed $(( job_start - executed_at ))s before this job started, returned in ${secs}s. $detail"
 elif [[ "$restored" == "false" ]]; then
-  summary "### ⚪ BASELINE: cache across runs ($label)" "" "No saved engine state to restore, so this run seeds the cache. Re-run the workflow to measure. $detail" ""
+  baseline "cache across runs ($label)" "No saved engine state to restore, so this run seeds the cache. Re-run the workflow to measure. $detail"
 else
   fail "cache across runs ($label)" "MISS: the step re-executed in this job (${secs}s). $detail"
 fi
